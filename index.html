@@ -363,76 +363,36 @@
 </div>
 
 <!-- ══════════════════════════════════════════════════════════
-     AUTH MODAL (Login / Register)
+     AUTH MODAL — passwordless (email magic link)
 ══════════════════════════════════════════════════════════ -->
 <div class="modal-overlay" id="auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title"
      onclick="if(event.target===this) closeAuthModal()">
   <div class="modal">
     <div class="modal-header">
-      <h2 id="auth-modal-title" style="font-size:1.2rem;">🌙 The Midnight Hub</h2>
+      <h2 id="auth-modal-title" style="font-size:1.2rem;">🌙 Join The Midnight Hub</h2>
       <button class="modal-close" onclick="closeAuthModal()" aria-label="Close">✕</button>
     </div>
 
-    <!-- Tabs -->
-    <div class="auth-tabs" role="tablist">
-      <button class="auth-tab active" data-tab="login"    role="tab" aria-selected="true"
-              onclick="switchAuthTab('login')">Sign In</button>
-      <button class="auth-tab"        data-tab="register" role="tab" aria-selected="false"
-              onclick="switchAuthTab('register')">Create Account</button>
-    </div>
+    <p style="font-size:0.88rem;color:var(--text-muted);margin-bottom:1.5rem;line-height:1.5;">
+      Enter your email and we'll send you a magic sign-in link — no password needed.
+    </p>
 
-    <!-- Login -->
-    <form id="auth-login-form" onsubmit="handleLogin(event)" novalidate>
+    <form id="auth-main-form" onsubmit="handleLogin(event)" novalidate>
       <div class="form-group">
-        <label class="form-label" for="login-email">Email</label>
-        <input class="form-control" type="email" id="login-email"
+        <label class="form-label" for="auth-name">Display Name <span style="color:var(--text-faint);font-weight:400;">(new users only)</span></label>
+        <input class="form-control" type="text" id="auth-name"
+               placeholder="Your name" autocomplete="name" maxlength="50">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="auth-email">Email</label>
+        <input class="form-control" type="email" id="auth-email"
                placeholder="you@example.com" autocomplete="email" required aria-required="true">
       </div>
-      <div class="form-group">
-        <label class="form-label" for="login-pass">Password</label>
-        <div class="input-group">
-          <input class="form-control" type="password" id="login-pass"
-                 placeholder="Your password" autocomplete="current-password" required aria-required="true">
-          <span class="input-icon" onclick="togglePasswordVis('login-pass',this)" role="button" tabindex="0" aria-label="Toggle password visibility">👁</span>
-        </div>
-      </div>
-      <button class="btn btn-primary btn-block" type="submit">Sign In</button>
-      <div class="divider">or</div>
-      <p style="font-size:0.85rem;text-align:center;color:var(--text-muted);">
-        Don't have an account?
-        <button type="button" onclick="switchAuthTab('register')"
-                style="background:none;border:none;color:var(--accent);cursor:pointer;font-weight:600;">Join now</button>
-      </p>
-    </form>
-
-    <!-- Register -->
-    <form id="auth-register-form" class="hidden" onsubmit="handleRegister(event)" novalidate>
-      <div class="form-group">
-        <label class="form-label" for="reg-name">Display Name</label>
-        <input class="form-control" type="text" id="reg-name"
-               placeholder="Your name" autocomplete="name" required aria-required="true" maxlength="50">
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="reg-email">Email</label>
-        <input class="form-control" type="email" id="reg-email"
-               placeholder="you@example.com" autocomplete="email" required aria-required="true">
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="reg-pass">Password</label>
-        <div class="input-group">
-          <input class="form-control" type="password" id="reg-pass"
-                 placeholder="At least 6 characters" autocomplete="new-password" required aria-required="true" minlength="6">
-          <span class="input-icon" onclick="togglePasswordVis('reg-pass',this)" role="button" tabindex="0" aria-label="Toggle password visibility">👁</span>
-        </div>
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="reg-confirm">Confirm Password</label>
-        <input class="form-control" type="password" id="reg-confirm"
-               placeholder="Repeat password" autocomplete="new-password" required aria-required="true">
-      </div>
-      <button class="btn btn-primary btn-block" type="submit">Create Account</button>
-      <p style="font-size:0.78rem;color:var(--text-faint);text-align:center;margin-top:0.75rem;">
-        By joining you agree to our community guidelines.
+      <button class="btn btn-primary btn-block" type="submit" id="auth-submit-btn">
+        Continue with Email
+      </button>
+      <p style="font-size:0.78rem;color:var(--text-faint);text-align:center;margin-top:1rem;">
+        New here? Just enter your name above — we'll create your account automatically.
       </p>
     </form>
   </div>

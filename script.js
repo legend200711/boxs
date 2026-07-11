@@ -115,99 +115,125 @@ function navigate(pageId, opts = {}) {
 function openAuthModal(tab = 'login') {
   const overlay = $('auth-modal');
   overlay.classList.add('open');
-  switchAuthTab(tab);
+  // Focus the email field after transition
+  setTimeout(() => $('auth-email')?.focus(), 150);
 }
 function closeAuthModal() { $('auth-modal').classList.remove('open'); }
 
 function switchAuthTab(tab) {
-  $$('.auth-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
-  $('auth-login-form').classList.toggle('hidden', tab !== 'login');
-  $('auth-register-form').classList.toggle('hidden', tab !== 'register');
+  // No-op — kept for backwards compat with any onclick references
 }
+
+// ── Auth — passwordless (email magic link) ─────────────────
+// Single flow: enter name + email → Firebase sends a sign-in link
+// On return visit the link is detected and auth completes automatically
 
 async function handleLogin(e) {
   e.preventDefault();
-  const email = $('login-email').value.trim();
-  const pass  = $('login-pass').value;
-  if (!email || !pass) { showToast('Please fill in all fields.', 'warning'); return; }
-  clearFormErrors('auth-login-form');
+  const name  = ($('auth-name')?.value  || '').trim();
+  const email = ($('auth-email')?.value || '').trim();
+  clearFormErrors('auth-main-form');
 
-  try {
-    if (!App.useLocalFallback && App.auth) {
-      await App.auth.signInWithEmailAndPassword(email, pass);
-      closeAuthModal();
-      showToast('Welcome back!', 'success');
-      // onAuthStateChanged handles profile load + UI update
-    } else {
-      const users = LocalDB.get('users') || [];
-      const user  = users.find(u => u.email === email && u.password === btoa(pass));
-      if (!user) throw new Error('Invalid email or password.');
-      setCurrentUser(user);
-      closeAuthModal();
-      showToast('Welcome back!', 'success');
-      navigate('feed');
-    }
-  } catch (err) {
-    const msg = friendlyAuthError(err.code || err.message);
-    showFormError('login-email', msg);
-  }
-}
+  if (!email) { showFormError('auth-email', 'Please enter your email.'); return; }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showFormError('auth-email', 'Enter a valid email address.'); return; }
 
-async function handleRegister(e) {
-  e.preventDefault();
-  const name  = $('reg-name').value.trim();
-  const email = $('reg-email').value.trim();
-  const pass  = $('reg-pass').value;
-  const conf  = $('reg-confirm').value;
-  clearFormErrors('auth-register-form');
-
-  if (!name || !email || !pass) { showToast('Please fill in all fields.', 'warning'); return; }
-  if (pass !== conf)   { showFormError('reg-confirm', 'Passwords do not match.'); return; }
-  if (pass.length < 6) { showFormError('reg-pass', 'Password must be at least 6 characters.'); return; }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showFormError('reg-email', 'Enter a valid email address.'); return; }
-
-  try {
-    if (!App.useLocalFallback && App.auth) {
-      const cred = await App.auth.createUserWithEmailAndPassword(email, pass);
-      await cred.user.updateProfile({ displayName: name });
-
-      const usersSnap = await App.db.ref('users').once('value');
-      const isFirst   = !usersSnap.exists();
-      const profile   = {
-        uid: cred.user.uid, name, email,
-        handle:    '@' + name.toLowerCase().replace(/\s+/g, '') + Math.floor(Math.random() * 999),
-        bio: '', photoURL: null,
-        badges:    isFirst ? ['founder'] : [],
-        followers: {}, following: {},
-        createdAt: Date.now()
-      };
-      await App.db.ref(`users/${cred.user.uid}`).set(profile);
-      closeAuthModal();
-      showToast('Account created! Welcome to The Midnight Hub 🌙', 'success');
-      // onAuthStateChanged handles profile load + UI update
-    } else {
-      const users   = LocalDB.get('users') || [];
-      if (users.find(u => u.email === email)) throw new Error('Email already registered.');
+  // Local fallback — no email sending, just match or create by email
+  if (App.useLocalFallback) {
+    const users = LocalDB.get('users') || [];
+    let user = users.find(u => u.email === email);
+    if (!user) {
+      if (!name) { showFormError('auth-name', 'Enter your name to create an account.'); return; }
       const isFirst = users.length === 0;
-      const newUser = {
+      user = {
         uid: `u_${Date.now()}`, name, email,
-        password: btoa(pass),
         handle: '@' + name.toLowerCase().replace(/\s+/g,'') + Math.floor(Math.random()*999),
         bio: '', photoURL: null,
         badges: isFirst ? ['founder'] : [],
         followers: [], following: [],
         createdAt: Date.now()
       };
-      users.push(newUser);
+      users.push(user);
       LocalDB.set('users', users);
-      setCurrentUser(newUser);
-      closeAuthModal();
-      showToast('Account created! Welcome to The Midnight Hub 🌙', 'success');
-      navigate('feed');
     }
+    setCurrentUser(user);
+    closeAuthModal();
+    showToast(`Welcome${user.name ? ', ' + user.name : ''}! 🌙`, 'success');
+    navigate('feed');
+    return;
+  }
+
+  // Firebase — send magic link
+  const actionCodeSettings = {
+    url:             window.location.href,
+    handleCodeInApp: true
+  };
+
+  try {
+    $('auth-submit-btn').disabled = true;
+    $('auth-submit-btn').textContent = 'Sending link…';
+
+    await App.auth.sendSignInLinkToEmail(email, actionCodeSettings);
+
+    // Store name + email so we can create the profile when the link is clicked
+    localStorage.setItem('mh_pendingEmail', email);
+    if (name) localStorage.setItem('mh_pendingName', name);
+
+    closeAuthModal();
+    showToast('Check your email! Click the link to sign in 📧', 'success', 6000);
   } catch (err) {
     const msg = friendlyAuthError(err.code || err.message);
-    showFormError('reg-email', msg);
+    showFormError('auth-email', msg);
+  } finally {
+    const btn = $('auth-submit-btn');
+    if (btn) { btn.disabled = false; btn.textContent = 'Continue with Email'; }
+  }
+}
+
+// Alias — register uses the same single form
+const handleRegister = handleLogin;
+
+// Called on page load — completes sign-in if URL contains a magic link
+async function handleEmailLinkSignIn() {
+  if (App.useLocalFallback || !App.auth) return;
+  if (!App.auth.isSignInWithEmailLink(window.location.href)) return;
+
+  let email = localStorage.getItem('mh_pendingEmail');
+  if (!email) {
+    email = prompt('Please confirm your email address to complete sign-in:');
+    if (!email) return;
+  }
+
+  try {
+    const result = await App.auth.signInWithEmailLink(email, window.location.href);
+    localStorage.removeItem('mh_pendingEmail');
+
+    // Clean the link from the URL bar without reloading
+    window.history.replaceState({}, document.title, window.location.pathname);
+
+    // Check if profile already exists
+    const snap = await App.db.ref(`users/${result.user.uid}`).once('value');
+    if (!snap.exists()) {
+      const pendingName = localStorage.getItem('mh_pendingName') || email.split('@')[0];
+      localStorage.removeItem('mh_pendingName');
+      const usersSnap = await App.db.ref('users').once('value');
+      const isFirst   = !usersSnap.exists();
+      const profile = {
+        uid:      result.user.uid,
+        name:     result.user.displayName || pendingName,
+        email,
+        handle:   '@' + pendingName.toLowerCase().replace(/\s+/g,'') + Math.floor(Math.random()*999),
+        bio: '', photoURL: null,
+        badges:   isFirst ? ['founder'] : [],
+        followers: {}, following: {},
+        createdAt: Date.now()
+      };
+      await App.db.ref(`users/${result.user.uid}`).set(profile);
+    }
+    // onAuthStateChanged fires and handles the rest
+    showToast('Signed in! Welcome to The Midnight Hub 🌙', 'success');
+  } catch (err) {
+    console.error('[Magic link] Sign-in failed:', err);
+    showToast(friendlyAuthError(err.code || err.message), 'danger');
   }
 }
 
@@ -232,13 +258,15 @@ function handleLogout() {
 // Map Firebase error codes to friendly messages
 function friendlyAuthError(code) {
   const map = {
-    'auth/user-not-found':       'No account found with that email.',
-    'auth/wrong-password':       'Incorrect password.',
-    'auth/email-already-in-use': 'That email is already registered.',
-    'auth/invalid-email':        'Enter a valid email address.',
-    'auth/too-many-requests':    'Too many attempts. Please try again later.',
-    'auth/weak-password':        'Password must be at least 6 characters.',
-    'auth/network-request-failed': 'Network error. Check your connection.',
+    'auth/user-not-found':           'No account found with that email.',
+    'auth/invalid-email':            'Enter a valid email address.',
+    'auth/too-many-requests':        'Too many attempts. Please try again later.',
+    'auth/network-request-failed':   'Network error. Check your connection.',
+    'auth/invalid-action-code':      'This sign-in link has expired or already been used. Please request a new one.',
+    'auth/expired-action-code':      'This sign-in link has expired. Please request a new one.',
+    'auth/invalid-continue-uri':     'Invalid redirect URL. Check your Firebase console.',
+    'auth/unauthorized-continue-uri':'This domain is not authorised. Add it in your Firebase console.',
+    'auth/operation-not-allowed':    'Email link sign-in is not enabled. Enable it in Firebase console → Authentication → Sign-in methods.',
   };
   return map[code] || code || 'Something went wrong. Please try again.';
 }
@@ -270,7 +298,7 @@ function showFormError(fieldId, msg) {
 }
 
 function clearFormErrors(formId) {
-  const form = $(formId);
+  const form = $(formId) || document.querySelector(`[id="${formId}"]`);
   if (!form) return;
   form.querySelectorAll('.form-error').forEach(e => e.remove());
   form.querySelectorAll('.form-control').forEach(e => e.style.borderColor = '');
@@ -1290,6 +1318,8 @@ async function sendMessageHandler(convoId) {
   }
 }
 
+// ── Service Worker registration ────────────────────────────
+function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('/themidnighthub/sw.js')
@@ -1360,8 +1390,7 @@ function init() {
   if (prefs.darkMode === false) applyDarkMode(false);
 
   // Wire up static event listeners
-  $('login-form-el')?.addEventListener('submit', handleLogin);
-  $('register-form-el')?.addEventListener('submit', handleRegister);
+  $('auth-main-form')?.addEventListener('submit', handleLogin);
   $('edit-profile-form')?.addEventListener('submit', saveProfile);
   $('submit-post-btn')?.addEventListener('click', submitPostWithImage);
   $('image-upload-input')?.addEventListener('change', handleImageUpload);
@@ -1369,6 +1398,8 @@ function init() {
   const firebaseReady = initFirebase();
 
   if (firebaseReady) {
+    // Complete magic-link sign-in if this page load came from an email link
+    handleEmailLinkSignIn();
     // Show a brief loading state while Firebase resolves auth
     const feed = $('feed-posts');
     if (feed) feed.innerHTML = '<div class="skeleton" style="height:120px;margin-bottom:0.75rem;border-radius:12px;"></div>'.repeat(3);
